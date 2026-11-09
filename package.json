@@ -1,0 +1,61 @@
+{
+  "name": "dsh-artifacts",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness「产物」插件：左侧边栏的全局产物收藏夹——会话交付的图片和文件自动入箱，也可手动收藏链接、粘贴图片、上传文件；全部/图片/文件/链接 分类浏览。",
+  "type": "module",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/modusensus/dsh-artifacts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/modusensus/dsh-artifacts/issues"
+  },
+  "homepage": "https://github.com/modusensus/dsh-artifacts#readme",
+  "author": "modusensus",
+  "files": [
+    "client.js",
+    "cordis.patch.yml",
+    "index.js",
+    "store.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh-artifacts",
+    "deepseek-harness",
+    "artifacts",
+    "collect"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
