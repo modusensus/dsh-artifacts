@@ -1,6 +1,6 @@
 {
   "name": "dsh-artifacts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness「产物」插件：左侧边栏的全局产物收藏夹——会话交付的图片和文件自动入箱，也可手动收藏链接、粘贴图片、上传文件；全部/图片/文件/链接 分类浏览。",
   "type": "module",
   "main": "index.js",

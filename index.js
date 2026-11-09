@@ -12,13 +12,14 @@
  * 存储在 ~/.dsh/artifacts/（index.json + files/<sha256><ext>），见 store.js。
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES,
   artifactsRoot, collectFromDisk,
 } from './store.js'
+import { backfillFromSessions } from './backfill.js'
 
 export const name = 'dsh-artifacts'
 export const inject = ['webServer', 'tools']
@@ -173,10 +174,11 @@ export function apply(ctx, config = {}) {
 
   // ---- 自动收集：会话交付（present 工具）的文件/图片入箱 ----
   // present 侧在工具成功后 session.append('deliverables/presented', {turn, callId, files})；
+  // 监听器收到的是事件信封 {type, seq, time, data}，载荷在 event.data 里。
   // 恢复的历史种子不发布 session/event，且按 sha256 去重，重启/重放不会收两次。
   ctx.on?.('session/event', (session, event) => {
     if (event?.type !== 'deliverables/presented') return
-    const files = Array.isArray(event.files) ? event.files : []
+    const files = Array.isArray(event.data?.files) ? event.data.files : []
     for (const file of files) {
       const path = String(file?.path || '')
       if (!path) continue
@@ -189,6 +191,27 @@ export function apply(ctx, config = {}) {
       else if (r.reason !== 'duplicate') log('auto.skipped', { path, reason: r.reason })
     }
   }, { global: true })
+
+  // ---- 旧会话回填：默认首次启动后后台扫历史日志（marker 防重扫；内容去重保证幂等）----
+  const markerPath = join(store.root, 'backfill.json')
+  const backfillMode = config.backfill === undefined ? 'once' : config.backfill
+  const shouldBackfill = backfillMode === 'always' || (backfillMode !== false && !existsSync(markerPath))
+  if (shouldBackfill) {
+    void (async () => {
+      try {
+        const stats = await backfillFromSessions(store, {
+          days: config.backfillDays ?? 0,
+          maxFiles: config.backfillMaxFiles ?? 500,
+        })
+        log('backfill.done', stats)
+        try {
+          writeFileSync(markerPath, JSON.stringify({ completedAt: new Date().toISOString(), ...stats }, null, 2))
+        } catch { /* 写不进就下次再扫（去重保证幂等） */ }
+      } catch (error) {
+        log('backfill.error', { message: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+  }
 
   // ---- save_artifact 工具：模型把链接/文件主动收进产物 ----
   const tools = ctx.tools ?? ctx.get?.('tools')

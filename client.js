@@ -448,7 +448,7 @@ window.__ModuleLoader__.load({
       disposers.push(slots.inject('main', () => {
         const disposeMain = slots.register({ name: 'main', key: PANEL_ID }, PanelView)
         const disposeEntry = slots.inject('sidebar.panellist', () => slots.register(
-          { name: 'sidebar.panellist', id: PANEL_ID, order: 9, label: () => t('panel') },
+          { name: 'sidebar.panellist', id: PANEL_ID, order: 9, label: () => tRef.current('panel') },
           PanelIcon,
         ))
         return [disposeMain, disposeEntry]

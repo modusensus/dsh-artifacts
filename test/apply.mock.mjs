@@ -1,12 +1,19 @@
 /**
  * dsh-artifacts apply() 全链路 mock 测试（不依赖宿主）。
  * 运行：node test/apply.mock.mjs
- * 前提：default 工作区临时存在 dsh-tools stub（测完可删）。
+ * dsh-tools stub 临时放在 default 工作区层（宿主的 junction 解析链不经过那里，不会遮蔽真包）。
  */
 import { strict as assert } from 'node:assert'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ---- 临时 dsh-tools stub（测完必删）----
+const stubDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '@deepseek-ai', 'dsh-tools')
+mkdirSync(stubDir, { recursive: true })
+writeFileSync(join(stubDir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-tools', version: '0.0.0-mock', type: 'module', main: 'index.js' }))
+writeFileSync(join(stubDir, 'index.js'), 'export function defineTool(def) { return def }\n')
 
 process.env.DSH_ARTIFACTS_HOME = mkdtempSync(join(tmpdir(), 'dsh-artifacts-apply-'))
 const { apply } = await import('../index.js')
@@ -127,11 +134,11 @@ let imageItemId = ''
   assert.equal(res.statusCode, 404)
 }
 
-// ---- session/event 自动收集（deliverables/presented）----
+// ---- session/event 自动收集（deliverables/presented，信封 {type, seq, time, data}）----
 const session = { id: 'sess-12345678', header: { cwd: 'D:\\proj\\turf' } }
 eventHandlers[0].handler(session, {
-  type: 'deliverables/presented', seq: 9, turn: 3,
-  files: [{ path: join(workDir, 'report.md'), description: '最终报告' }, { path: join(workDir, 'missing.txt') }],
+  type: 'deliverables/presented', seq: 9, time: 1,
+  data: { turn: 3, callId: 'c9', files: [{ path: join(workDir, 'report.md'), description: '最终报告' }, { path: join(workDir, 'missing.txt') }] },
 })
 await new Promise((r) => setTimeout(r, 50))
 {
@@ -190,3 +197,9 @@ assert.equal(tool.name, 'save_artifact')
 
 console.log('apply() mock tests passed ✓')
 console.log('host 日志样例:', logs.slice(0, 3).join(' | '))
+
+// ---- 清理临时 stub 与临时 home ----
+rmSync(stubDir, { recursive: true, force: true })
+try { rmSync(dirname(stubDir), { recursive: true, force: true }) } catch { /* node_modules/@deepseek-ai 空了就删 */ }
+try { rmSync(dirname(dirname(stubDir)), { recursive: true, force: true }) } catch { /* node_modules 空了就删 */ }
+rmSync(process.env.DSH_ARTIFACTS_HOME, { recursive: true, force: true })
