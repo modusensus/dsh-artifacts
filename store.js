@@ -232,6 +232,25 @@ export class ArtifactStore {
     return existsSync(path) ? path : null
   }
 
+  /**
+   * 按当前分类规则重估内容条目类型（视频分类是 0.2.0 新增，旧库里的视频可能被
+   * 收成了 file）。链接条目不动。有变更才写盘。返回修正条数。
+   */
+  reclassify() {
+    const items = this.load()
+    let changed = 0
+    for (const item of items) {
+      if (item.kind === 'link') continue
+      const kind = classify(item.name, item.mime)
+      if (kind !== item.kind) {
+        item.kind = kind
+        changed += 1
+      }
+    }
+    if (changed) this.save(items)
+    return changed
+  }
+
   counts() {
     const items = this.load()
     const c = { all: items.length, image: 0, video: 0, file: 0, link: 0 }

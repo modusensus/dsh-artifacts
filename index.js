@@ -55,6 +55,8 @@ export function apply(ctx, config = {}) {
   }
 
   const store = new ArtifactStore(config.root || artifactsRoot())
+  const reclassified = store.reclassify()
+  if (reclassified) log('store.reclassified', { count: reclassified })
   log('store.ready', { root: store.root, items: store.load().length })
 
   const webServer = ctx.webServer ?? ctx.get?.('webServer')
