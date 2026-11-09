@@ -36,8 +36,9 @@ export function indexFile() {
   return join(artifactsRoot(), 'index.json')
 }
 
-/** 单文件体积上限：50MB（present 交付的大文件不收，提示用户手动收藏链接）。 */
+/** 单文件体积上限：图片/文件 50MB；视频单独放宽到 200MB（remotion 等渲染产物常几十上百 MB）。 */
 export const MAX_FILE_BYTES = 50 * 1024 * 1024
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024
 /** base64 上传（粘贴图片/小文件）上限：25MB（走请求体，收敛一点）。 */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
@@ -51,7 +52,8 @@ const MIME_BY_EXT = new Map([
   ['.txt', 'text/plain'], ['.md', 'text/markdown'], ['.json', 'application/json'],
   ['.csv', 'text/csv'], ['.html', 'text/html'], ['.pdf', 'application/pdf'],
   ['.zip', 'application/zip'], ['.mp3', 'audio/mpeg'], ['.wav', 'audio/wav'],
-  ['.mp4', 'video/mp4'], ['.webm', 'video/webm'],
+  ['.mp4', 'video/mp4'], ['.m4v', 'video/mp4'], ['.webm', 'video/webm'], ['.mov', 'video/quicktime'],
+  ['.mkv', 'video/x-matroska'], ['.avi', 'video/x-msvideo'], ['.mpg', 'video/mpeg'], ['.mpeg', 'video/mpeg'],
 ])
 
 export function mimeForExt(ext) {
@@ -74,6 +76,28 @@ export function isImageMime(mime) {
 export function looksLikeImage(name, mime) {
   if (mime && isImageMime(mime)) return true
   return IMAGE_MIME.has(mimeForExt(extname(String(name || ''))))
+}
+
+/** 视频条目判定：MIME（video/*）或视频扩展名。 */
+export function isVideoMime(mime) {
+  return String(mime || '').toLowerCase().split(';')[0].trim().startsWith('video/')
+}
+
+export function looksLikeVideo(name, mime) {
+  if (mime && isVideoMime(mime)) return true
+  return isVideoMime(mimeForExt(extname(String(name || ''))))
+}
+
+/** 按名称/MIME 判定条目类型。 */
+export function classify(name, mime) {
+  if (looksLikeVideo(name, mime)) return 'video'
+  if (looksLikeImage(name, mime)) return 'image'
+  return 'file'
+}
+
+/** 条目体积上限：视频单独放宽。 */
+export function capForKind(kind) {
+  return kind === 'video' ? MAX_VIDEO_BYTES : MAX_FILE_BYTES
 }
 
 function sha256(buf) {
@@ -118,13 +142,13 @@ export class ArtifactStore {
    */
   addBuffer({ buf, name, mime = '', note = '', source = '', sessionId = '', originPath = '' }) {
     if (!buf || !buf.byteLength) return { added: false, reason: 'empty' }
-    if (buf.byteLength > MAX_FILE_BYTES) return { added: false, reason: 'too-large' }
+    const kind = classify(name, mime)
+    if (buf.byteLength > capForKind(kind)) return { added: false, reason: 'too-large' }
     const hash = sha256(buf)
     const ext = (extname(String(name || '')) || extForMime(mime) || '').toLowerCase()
     const stored = hash + ext
     const storedPath = join(this.files, stored)
     if (!existsSync(storedPath)) writeFileSync(storedPath, buf)
-    const kind = looksLikeImage(name, mime) ? 'image' : 'file'
     const displayName = basename(String(name || stored)) || stored
     const items = this.load()
     const dup = items.find((it) => it.sha256 === hash && it.name === displayName)
@@ -210,18 +234,19 @@ export class ArtifactStore {
 
   counts() {
     const items = this.load()
-    const c = { all: items.length, image: 0, file: 0, link: 0 }
+    const c = { all: items.length, image: 0, video: 0, file: 0, link: 0 }
     for (const it of items) c[it.kind] = (c[it.kind] || 0) + 1
     return c
   }
 }
 
-/** 从磁盘收一个文件（auto-collect / 模型 save_artifact 共用）。 */
+/** 从磁盘收一个文件（auto-collect / 回填 / 模型 save_artifact 共用），上限按类型放宽。 */
 export function collectFromDisk(store, absPath, { note = '', source = '', sessionId = '' } = {}) {
   try {
     const st = statSync(absPath)
     if (!st.isFile()) return { added: false, reason: 'not-file' }
-    if (st.size > MAX_FILE_BYTES) return { added: false, reason: 'too-large' }
+    const kind = classify(basename(absPath), mimeForExt(extname(absPath)))
+    if (st.size > capForKind(kind)) return { added: false, reason: 'too-large' }
     const buf = readFileSync(absPath)
     return store.addBuffer({
       buf, name: basename(absPath),

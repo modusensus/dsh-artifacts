@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES,
+  ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES,
   artifactsRoot, collectFromDisk,
 } from './store.js'
 import { backfillFromSessions } from './backfill.js'
@@ -77,7 +77,7 @@ export function apply(ctx, config = {}) {
         }
         try {
           const bytes = readFileSync(path)
-          const inline = item.kind === 'image' && !download
+          const inline = (item.kind === 'image' || item.kind === 'video') && !download
           const headers = {
             'Content-Type': item.mime || 'application/octet-stream',
             'Content-Length': String(bytes.byteLength),
@@ -106,7 +106,7 @@ export function apply(ctx, config = {}) {
         try {
           if (req.method === 'GET') {
             const q = new URL(String(req.url || ''), 'http://x').searchParams
-            if (q.get('stats')) return send(200, { ok: true, counts: store.counts(), version: pluginVersion, root: store.root, maxFileBytes: MAX_FILE_BYTES, maxUploadBytes: MAX_UPLOAD_BYTES })
+            if (q.get('stats')) return send(200, { ok: true, counts: store.counts(), version: pluginVersion, root: store.root, maxFileBytes: MAX_FILE_BYTES, maxVideoBytes: MAX_VIDEO_BYTES, maxUploadBytes: MAX_UPLOAD_BYTES })
             const query = (q.get('query') || '').trim().toLowerCase()
             let items = store.load()
             if (query) items = items.filter((it) => ((it.name || '') + ' ' + (it.note || '') + ' ' + (it.host || '') + ' ' + (it.source || '')).toLowerCase().includes(query))
@@ -219,7 +219,7 @@ export function apply(ctx, config = {}) {
     tools.register(defineTool({
       name: 'save_artifact',
       description: '把对本用户长期有用的东西收进全局「产物」收藏夹（跨会话可查）：' +
-        '① kind=link 收网址（文档、参考、工具页等）；② kind=file 把会话工作区里生成的文件（图片/文档等）收进去，' +
+        '① kind=link 收网址（文档、参考、工具页等）；② kind=file 把会话工作区里生成的文件（图片/视频/文档等）收进去，' +
         '给 path（相对当前工作区）。收藏会去重：同一链接或同一内容不会重复入库。产物面板在左侧边栏。',
       parameters: {
         kind: { type: 'string', description: '要收藏的类型：link（网址）或 file（文件）。' },

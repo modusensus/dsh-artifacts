@@ -10,8 +10,8 @@
  * 帧 0 是 header 行：{type:'session', id, cwd, createdAt, ...}
  */
 import { promises as fsp } from 'node:fs'
-import { basename, join } from 'node:path'
-import { dshHome, MAX_FILE_BYTES } from './store.js'
+import { basename, extname, join } from 'node:path'
+import { capForKind, classify, collectFromDisk, dshHome, mimeForExt } from './store.js'
 
 const ZSTD_MAGIC = 4247762216
 const MAX_SESSION_FILE_BYTES = 150 * 1024 * 1024
@@ -181,15 +181,15 @@ export async function backfillFromSessions(store, { days = 0, maxFiles = 300, on
   return stats
 }
 
-/** 收单个文件，区分缺失/超大（store.addBuffer 的 too-large 判定在读取后）。 */
+/** 收单个文件，区分缺失/超大（上限按图片/视频/文件类型放宽）。 */
 async function collect(store, absPath, meta) {
   try {
     const st = await fsp.stat(absPath)
     if (!st.isFile()) return { added: false, reason: 'missing' }
-    if (st.size > MAX_FILE_BYTES) return { added: false, reason: 'too-large' }
+    const kind = classify(basename(absPath), mimeForExt(extname(absPath)))
+    if (st.size > capForKind(kind)) return { added: false, reason: 'too-large' }
   } catch {
     return { added: false, reason: 'missing' }
   }
-  const { collectFromDisk } = await import('./store.js')
   return collectFromDisk(store, absPath, meta)
 }

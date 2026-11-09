@@ -25,12 +25,12 @@ window.__ModuleLoader__.load({
     const DICT = {
       zh: {
         panel: '产物',
-        tabAll: '全部', tabImage: '图片', tabFile: '文件', tabLink: '链接',
+        tabAll: '全部', tabImage: '图片', tabVideo: '视频', tabFile: '文件', tabLink: '链接',
         search: '搜索产物…', refresh: '刷新', add: '收藏', addLink: '收藏链接', addPaste: '粘贴图片收藏',
         addFile: '上传文件收藏', pasteHint: '按 Ctrl+V 粘贴图片', save: '收藏', cancel: '取消',
         urlPlaceholder: 'https://…', titlePlaceholder: '标题（可选）', notePlaceholder: '备注（可选）',
         emptyTitle: '未找到产物',
-        emptyText: '当会话生成图片和文件输出时，它们会显示在这里。',
+        emptyText: '当会话生成图片、视频和文件输出时，它们会显示在这里。',
         emptyTextAdd: '也可以点右上角「收藏」手动收链接、图片或文件。',
         open: '打开', copy: '复制', download: '下载', remove: '删除', confirmRemove: '删除这条产物？',
         copied: '已复制', removed: '已删除', none: '没有匹配的产物',
@@ -38,12 +38,12 @@ window.__ModuleLoader__.load({
       },
       en: {
         panel: 'Artifacts',
-        tabAll: 'All', tabImage: 'Images', tabFile: 'Files', tabLink: 'Links',
+        tabAll: 'All', tabImage: 'Images', tabVideo: 'Videos', tabFile: 'Files', tabLink: 'Links',
         search: 'Search artifacts…', refresh: 'Refresh', add: 'Save', addLink: 'Save link', addPaste: 'Paste image',
         addFile: 'Upload file', pasteHint: 'Press Ctrl+V to paste an image', save: 'Save', cancel: 'Cancel',
         urlPlaceholder: 'https://…', titlePlaceholder: 'Title (optional)', notePlaceholder: 'Note (optional)',
         emptyTitle: 'No artifacts yet',
-        emptyText: 'Images and files produced in sessions will show up here.',
+        emptyText: 'Images, videos and files produced in sessions will show up here.',
         emptyTextAdd: 'You can also use "Save" to keep links, images or files.',
         open: 'Open', copy: 'Copy', download: 'Download', remove: 'Delete', confirmRemove: 'Delete this artifact?',
         copied: 'Copied', removed: 'Deleted', none: 'No matching artifacts',
@@ -91,6 +91,7 @@ window.__ModuleLoader__.load({
       '.da-card{position:relative;display:flex;flex-direction:column;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;overflow:hidden;background:var(--dsw-alias-bg-layer-1);min-width:0}',
       '.da-card:hover{border-color:var(--dsw-alias-border-l2)}',
       '.da-thumb{height:150px;background-size:cover;background-position:center;background-repeat:no-repeat;background-color:var(--dsw-alias-bg-base);cursor:pointer;display:block;width:100%;border:0;padding:0}',
+      '.da-videothumb{height:150px;width:100%;object-fit:cover;background:var(--dsw-alias-bg-base);cursor:pointer;display:block;border:0;padding:0}',
       '.da-fileicon{height:110px;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 6%,transparent);cursor:pointer;border:0;width:100%}',
       '.da-linkicon{height:74px;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent)}',
       '.da-meta{padding:9px 11px;display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}',
@@ -118,6 +119,7 @@ window.__ModuleLoader__.load({
       '.da-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-1));border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);border-radius:10px;padding:8px 16px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25)}',
       '.da-lightbox{position:fixed;inset:0;z-index:190;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:32px}',
       '.da-lightbox img{max-width:92vw;max-height:80vh;border-radius:10px;object-fit:contain}',
+      '.da-lightbox video{max-width:92vw;max-height:76vh;border-radius:10px;background:#000}',
       '.da-lightbox .da-lbname{color:#fff;font-size:13px;max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.da-lightbox .da-lbacts{display:flex;gap:8px}',
       '.da-lightbox .da-lbacts button{border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.35);color:#fff;font:inherit;font-size:13px;border-radius:8px;padding:5px 14px;cursor:pointer}',
@@ -204,6 +206,12 @@ window.__ModuleLoader__.load({
           h('circle', { cx: 9, cy: 10, r: 1.8 }),
           h('path', { d: 'M4.5 17.5l4.8-4.8a1.5 1.5 0 0 1 2.1 0l6.1 6.1M15 15.2l1.6-1.6a1.5 1.5 0 0 1 2.1 0l1.8 1.8' }))
       }
+      if (kind === 'video') {
+        return h('svg', common,
+          h('rect', { x: 3.5, y: 5.5, width: 17, height: 13, rx: 2 }),
+          h('path', { d: 'M10 9.2v5.6l4.8-2.8z', fill: 'currentColor', stroke: 'none' }),
+          h('path', { d: 'M7.5 5.5V3.8M16.5 5.5V3.8M7.5 20.2v-1.7M16.5 20.2v-1.7' }))
+      }
       if (kind === 'search') {
         return h('svg', common,
           h('circle', { cx: 11, cy: 11, r: 6.5 }),
@@ -240,7 +248,7 @@ window.__ModuleLoader__.load({
     function Card({ item, t, onOpenImage, onToast }) {
       const doOpen = () => {
         if (item.kind === 'link') window.open(item.url, '_blank', 'noopener')
-        else if (item.kind === 'image') onOpenImage(item)
+        else if (item.kind === 'image' || item.kind === 'video') onOpenImage(item)
         else window.open(item.url, '_blank', 'noopener')
       }
       const doCopy = async () => {
@@ -259,9 +267,11 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'da-card' },
         item.kind === 'image'
           ? h('button', { className: 'da-thumb', style: thumbStyle, onClick: doOpen, 'aria-label': item.name, title: item.name })
-          : item.kind === 'file'
-            ? h('button', { className: 'da-fileicon', onClick: doOpen, title: item.name }, glyph('file', 30))
-            : h('div', { className: 'da-linkicon' }, glyph('link', 26)),
+          : item.kind === 'video'
+            ? h('video', { className: 'da-videothumb', src: item.url, preload: 'metadata', muted: true, playsInline: true, onClick: doOpen, title: item.name })
+            : item.kind === 'file'
+              ? h('button', { className: 'da-fileicon', onClick: doOpen, title: item.name }, glyph('file', 30))
+              : h('div', { className: 'da-linkicon' }, glyph('link', 26)),
         h('div', { className: 'da-meta' },
           h('div', { className: 'da-name', title: item.name },
             item.kind === 'link'
@@ -269,14 +279,18 @@ window.__ModuleLoader__.load({
               : item.name),
           item.note ? h('div', { className: 'da-note', title: item.note }, item.note) : null,
           h('div', { className: 'da-sub' },
-            h('span', { className: 'da-chip' }, item.kind === 'image' ? t('tabImage') : item.kind === 'file' ? t('tabFile') : (item.host || t('tabLink'))),
+            h('span', { className: 'da-chip' },
+              item.kind === 'image' ? t('tabImage')
+                : item.kind === 'video' ? t('tabVideo')
+                  : item.kind === 'file' ? t('tabFile')
+                    : (item.host || t('tabLink'))),
             item.size ? h('span', { className: 'da-filesize' }, fmtSize(item.size)) : null,
             item.source ? h('span', null, item.source) : null,
             h('span', null, fmtDate(item.addedAt)))),
         h('div', { className: 'da-acts' },
           h('button', { type: 'button', onClick: doOpen }, t('open')),
           h('button', { type: 'button', onClick: doCopy }, t('copy')),
-          item.kind === 'file' ? h('button', { type: 'button', onClick: () => window.open(item.url + '?download=1', '_blank', 'noopener') }, t('download')) : null,
+          (item.kind === 'file' || item.kind === 'video') ? h('button', { type: 'button', onClick: () => window.open(item.url + '?download=1', '_blank', 'noopener') }, t('download')) : null,
           h('button', { type: 'button', className: 'danger', onClick: doRemove }, t('remove'))))
     }
 
@@ -287,7 +301,9 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener('keydown', onKey)
       }, [onClose])
       return h('div', { className: 'da-lightbox', onClick: onClose },
-        h('img', { src: item.url, alt: item.name, onClick: (e) => e.stopPropagation() }),
+        item.kind === 'video'
+          ? h('video', { src: item.url, controls: true, autoPlay: true, style: { maxWidth: '92vw', maxHeight: '76vh' }, onClick: (e) => e.stopPropagation() })
+          : h('img', { src: item.url, alt: item.name, onClick: (e) => e.stopPropagation() }),
         h('div', { className: 'da-lbname' }, item.name),
         h('div', { className: 'da-lbacts', onClick: (e) => e.stopPropagation() },
           h('button', { type: 'button', onClick: () => window.open(item.url + '?download=1', '_blank', 'noopener') }, t('download')),
@@ -323,7 +339,7 @@ window.__ModuleLoader__.load({
       const [tab, setTab] = React.useState('all')
       const [query, setQuery] = React.useState('')
       const [items, setItems] = React.useState(null)
-      const [counts, setCounts] = React.useState({ all: 0, image: 0, file: 0, link: 0 })
+      const [counts, setCounts] = React.useState({ all: 0, image: 0, video: 0, file: 0, link: 0 })
       const [menuOpen, setMenuOpen] = React.useState(false)
       const [showLinkForm, setShowLinkForm] = React.useState(false)
       const [lightbox, setLightbox] = React.useState(null)
@@ -343,7 +359,7 @@ window.__ModuleLoader__.load({
           const r = await apiList(q)
           if (r.ok) {
             setItems(r.items)
-            setCounts(r.counts || { all: (r.items || []).length, image: 0, file: 0, link: 0 })
+            setCounts(r.counts || { all: (r.items || []).length, image: 0, video: 0, file: 0, link: 0 })
           }
         } catch { /* 宿主未就绪时静默，下次刷新再试 */ }
       }, [])
@@ -396,7 +412,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'da-root' },
         h('div', { className: 'da-topbar' },
           h('nav', { className: 'da-tabs', 'aria-label': t('panel') },
-            [['all', t('tabAll')], ['image', t('tabImage')], ['file', t('tabFile')], ['link', t('tabLink')]].map(([id, label]) =>
+            [['all', t('tabAll')], ['image', t('tabImage')], ['video', t('tabVideo')], ['file', t('tabFile')], ['link', t('tabLink')]].map(([id, label]) =>
               h('button', {
                 key: id, type: 'button', className: 'da-tab' + (tab === id ? ' on' : ''),
                 'aria-current': tab === id ? 'page' : undefined,

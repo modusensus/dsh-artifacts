@@ -43,10 +43,11 @@ assert.ok(store.resolveStored(item3.stored), '另一条目仍引用，文件保�
 assert.equal(store.remove(r3.item.id), true)
 assert.equal(store.resolveStored(item3.stored), null, '引用清零后文件删除')
 
-// 5. collectFromDisk（图片扩展名判定 + 原路径记录）
+// 5. collectFromDisk（图片/视频扩展名判定 + 原路径记录）
 const srcDir = join(process.env.DSH_ARTIFACTS_HOME, 'src')
 mkdirSync(srcDir, { recursive: true })
 writeFileSync(join(srcDir, 'pic.png'), Buffer.from('fakepng'))
+writeFileSync(join(srcDir, 'clip.mp4'), Buffer.from('fakemp4-bytes'))
 const c1 = collectFromDisk(store, join(srcDir, 'pic.png'), { source: '会话 abc · work' })
 assert.equal(c1.added, true)
 assert.equal(c1.item.kind, 'image')
@@ -56,15 +57,18 @@ assert.equal(c2.added, false, '同内容同名 → duplicate')
 const c3 = collectFromDisk(store, join(srcDir, 'missing.png'), {})
 assert.equal(c3.added, false)
 assert.ok(c3.reason)
+const c4 = collectFromDisk(store, join(srcDir, 'clip.mp4'), { source: '视频测试' })
+assert.equal(c4.added, true)
+assert.equal(c4.item.kind, 'video', 'mp4 → video 类型')
 
 // 6. counts + update
-assert.deepEqual(store.counts(), { all: 2, image: 1, file: 0, link: 1 })
+assert.deepEqual(store.counts(), { all: 3, image: 1, video: 1, file: 0, link: 1 })
 const u = store.update(l1.item.id, { note: '注' })
 assert.equal(u.note, '注')
 
 // 7. 索引持久化（新实例读同一份）
 const store2 = new ArtifactStore(store.root)
-assert.equal(store2.load().length, 2)
+assert.equal(store2.load().length, 3)
 
 rmSync(process.env.DSH_ARTIFACTS_HOME, { recursive: true, force: true })
 console.log('store tests passed ✓')

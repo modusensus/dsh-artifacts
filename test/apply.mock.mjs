@@ -75,7 +75,7 @@ assert.ok(api && fileRoute)
   await api.handler({ method: 'GET', url: '/api/dsh-artifacts?stats=1' }, res)
   const body = JSON.parse(res.body)
   assert.equal(body.ok, true)
-  assert.deepEqual(body.counts, { all: 0, image: 0, file: 0, link: 0 })
+  assert.deepEqual(body.counts, { all: 0, image: 0, video: 0, file: 0, link: 0 })
 }
 
 // ---- POST addLink ----
@@ -116,7 +116,7 @@ let imageItemId = ''
   const body = JSON.parse(res.body)
   assert.equal(body.ok, true)
   assert.equal(body.items.length, 2)
-  assert.deepEqual(body.counts, { all: 2, image: 1, file: 0, link: 1 })
+  assert.deepEqual(body.counts, { all: 2, image: 1, video: 0, file: 0, link: 1 })
   const img = body.items.find((it) => it.kind === 'image')
   assert.match(img.url, /^\/api\/dsh-artifacts\/file\//)
 }
@@ -180,7 +180,7 @@ assert.equal(tool.name, 'save_artifact')
   const res = fakeRes()
   await api.handler({ method: 'GET', url: '/api/dsh-artifacts?stats=1' }, res)
   const body = JSON.parse(res.body)
-  assert.deepEqual(body.counts, { all: 5, image: 2, file: 1, link: 2 })
+  assert.deepEqual(body.counts, { all: 5, image: 2, video: 0, file: 1, link: 2 })
 }
 
 // ---- remove ----
