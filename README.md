@@ -1,10 +1,10 @@
-# dsh-artifacts
+# @modusensus/dsh-artifacts
 
 **DSH（DeepSeek Harness）的全局产物收藏夹** —— 跨会话统一收纳图片、视频、文件和链接。
 
-[![npm version](https://img.shields.io/npm/v/dsh-artifacts.svg)](https://www.npmjs.com/package/dsh-artifacts)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-artifacts.svg)](https://www.npmjs.com/package/dsh-artifacts)
-[![license](https://img.shields.io/npm/l/dsh-artifacts.svg)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/%40modusensus%2Fdsh-artifacts.svg)](https://www.npmjs.com/package/@modusensus/dsh-artifacts)
+[![npm downloads](https://img.shields.io/npm/dm/%40modusensus%2Fdsh-artifacts.svg)](https://www.npmjs.com/package/@modusensus/dsh-artifacts)
+[![license](https://img.shields.io/npm/l/%40modusensus%2Fdsh-artifacts.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 [![GitHub stars](https://img.shields.io/github/stars/modusensus/dsh-artifacts.svg)](https://github.com/modusensus/dsh-artifacts)
 
@@ -33,15 +33,15 @@
 ```bash
 # 1. 装进 profile（profile 用 pnpm 管理，npm 亦可）
 cd <profile>          # 例如 ~/.dsh/profiles/desktop
-pnpm add dsh-artifacts
+pnpm add @modusensus/dsh-artifacts
 
 # 2. 在 profile 的 package.json 里把包登记进 bundle 列表
-#    dsh.profile.bundles 数组追加一项 "dsh-artifacts"
+#    dsh.profile.bundles 数组追加一项 "@modusensus/dsh-artifacts"
 
 # 3. 重启 DSH
 ```
 
-装完后 `dsh-artifacts` 会落在 `<profile>/node_modules/` 下，无需软链。
+装完后包会落在 `<profile>/node_modules/@modusensus/dsh-artifacts`，无需软链。
 
 ### 从源码安装
 
@@ -54,9 +54,9 @@ cd dsh-artifacts && npm install
 
 ```bash
 # Windows
-mklink /J "<profile>\node_modules\dsh-artifacts" "<clone 目录>"
+mklink /J "<profile>\node_modules\@modusensus\dsh-artifacts" "<clone 目录>"
 # macOS / Linux
-ln -s "<clone 目录>" "<profile>/node_modules/dsh-artifacts"
+ln -s "<clone 目录>" "<profile>/node_modules/@modusensus/dsh-artifacts"
 ```
 
 再改 profile 的 `package.json`：
@@ -64,13 +64,13 @@ ln -s "<clone 目录>" "<profile>/node_modules/dsh-artifacts"
 ```jsonc
 {
   "dependencies": {
-    "dsh-artifacts": "link:<clone 目录>"   // 追加
+    "@modusensus/dsh-artifacts": "link:<clone 目录>"   // 追加
   },
   "dsh": {
     "profile": {
       "bundles": [
         // … 原有列表
-        "dsh-artifacts"                     // 追加
+        "@modusensus/dsh-artifacts"        // 追加
       ]
     }
   }
@@ -102,7 +102,7 @@ pnpm install --ignore-scripts
 
 ```yaml
 - id: dsh-artifacts
-  name: dsh-artifacts
+  name: '@modusensus/dsh-artifacts'
   config:
     root: ~/.dsh/artifacts/
     backfill: once

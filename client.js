@@ -10,7 +10,7 @@
  * "loaded without registering dsh-artifacts"。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-artifacts',
+  id: '@modusensus/dsh-artifacts',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
