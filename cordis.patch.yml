@@ -4,5 +4,5 @@
 # config.root 可覆盖，默认跟随用户主目录（历史教训见 dsh-sticker：patch 不硬编码机器路径）。
 - insert:
     - id: dsh-artifacts
-      name: dsh-artifacts
+      name: '@modusensus/dsh-artifacts'
       config: {}
