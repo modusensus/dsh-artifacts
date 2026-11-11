@@ -2,8 +2,11 @@
  * dsh-artifacts — 全局产物收藏夹（Host 半边）。
  *
  * 「产物」= 跨会话的全局收藏箱（参考 Hermes 的收集式资产管理）：
- *   1. 自动收集：监听 session/event 的 deliverables/presented，会话交付的图片和文件
- *      自动入箱（按内容 SHA-256 去重，单文件上限 50MB）。
+ *   1. 自动收集（auto 配置：'all' 默认 / 'present' 仅① / 'off' 关闭）：
+ *      ① present 交付：监听 session/event 的 deliverables/presented，交付的图片和文件入箱；
+ *      ② 写入钩子：fs/write-intent / fs/edit-intent waterfall，模型写盘工具落盘的文件入箱；
+ *      ③ 轮末清扫：turn/end 扫会话工作区本轮改动，兜住 bash/脚本等绕过 fs 服务的产物。
+ *      ②③ 按扩展名白名单收（autoExts），内容均按 SHA-256 去重，单文件上限 50MB/视频 200MB。
  *   2. 手动收藏：/api/dsh-artifacts 管理 API——加链接、粘贴/上传图片与小文件、改注、删除。
  *   3. save_artifact 工具：模型在会话里主动把有用的链接/文件收进产物。
  *   4. /api/dsh-artifacts/file/<id> 内容路由：白名单 = 索引内 stored 文件，图片内联、
@@ -13,12 +16,13 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES,
   artifactsRoot, collectFromDisk,
 } from './store.js'
+import { DEFAULT_AUTO_EXTS, normalizeExts, sweepWorkspace } from './auto.js'
 import { backfillFromSessions } from './backfill.js'
 
 export const name = 'dsh-artifacts'
@@ -174,25 +178,154 @@ export function apply(ctx, config = {}) {
     log('webServer.missing')
   }
 
-  // ---- 自动收集：会话交付（present 工具）的文件/图片入箱 ----
-  // present 侧在工具成功后 session.append('deliverables/presented', {turn, callId, files})；
-  // 监听器收到的是事件信封 {type, seq, time, data}，载荷在 event.data 里。
-  // 恢复的历史种子不发布 session/event，且按 sha256 去重，重启/重放不会收两次。
-  ctx.on?.('session/event', (session, event) => {
-    if (event?.type !== 'deliverables/presented') return
-    const files = Array.isArray(event.data?.files) ? event.data.files : []
-    for (const file of files) {
-      const path = String(file?.path || '')
-      if (!path) continue
-      const r = collectFromDisk(store, path, {
-        note: String(file?.description || '').slice(0, 500),
-        source: sourceLabel(session),
-        sessionId: String(session?.id || ''),
-      })
-      if (r.added) log('auto.presented', { id: r.item.id, kind: r.item.kind, name: r.item.name })
-      else if (r.reason !== 'duplicate') log('auto.skipped', { path, reason: r.reason })
+  // ---- 自动收集：present 交付 + 写入钩子 + 轮末清扫 ----
+  // ① present 侧在工具成功后 session.append('deliverables/presented', {turn, callId, files})；
+  //    监听器收到的是事件信封 {type, seq, time, data}，载荷在 event.data 里。
+  // ② 写盘工具（write / editor 等）落盘前派发 fs/write-intent、fs/edit-intent waterfall
+  //    （target, actor=exec, next），同宿主 dsh-workspace-changes 的用法；这里只把目标路径
+  //    记进待收清单，等 tool/result、turn/end、session/disposed 时排水入箱——写失败（沙盒
+  //    拒绝等）的路径因不存在自然跳过。
+  // ③ turn/end 按 turn/start 起算的时间戳扫会话工作区，白名单命中才收。
+  // 全部走 store 的 sha256+文件名去重，重启/重放不会收两次；present 交付不受白名单限制。
+  const autoMode = config.auto === undefined || config.auto === null
+    ? 'all'
+    : (config.auto === false ? 'off' : String(config.auto))
+  const autoActive = autoMode !== 'off'
+  const autoExts = config.autoExts === undefined || config.autoExts === null
+    ? DEFAULT_AUTO_EXTS
+    : normalizeExts(config.autoExts)
+  const sweepMax = Number.isFinite(Number(config.autoSweepMax)) && Number(config.autoSweepMax) >= 1
+    ? Math.floor(Number(config.autoSweepMax))
+    : 50
+  log('auto.ready', { mode: autoMode, exts: autoExts.size, sweepMax })
+
+  const pendingWrites = new Map() // sessionId → 待排水的写盘路径集合
+  const turnStarts = new Map()    // sessionId → {turn, at}
+  const sessionCwds = new Map()   // sessionId → 当前工作区
+  const sweeping = new Set()      // 在扫的 sessionId（防重入）
+
+  /** 事件时间戳归一为毫秒（宿主可能给秒），不可用返回 0。 */
+  const timeMsOf = (value) => {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) return 0
+    return n < 1e12 ? n * 1000 : n
+  }
+
+  const withinWhitelist = (path) => autoExts.has(extname(path).toLowerCase())
+
+  /** 排水：把待收清单里存在且白名单命中的文件入箱。 */
+  function drainWrites(session) {
+    const sid = String(session?.id || '')
+    const set = pendingWrites.get(sid)
+    if (!set?.size) return
+    pendingWrites.delete(sid)
+    for (const path of set) {
+      if (!withinWhitelist(path)) continue
+      const r = collectFromDisk(store, path, { source: sourceLabel(session), sessionId: sid })
+      if (r.added) log('auto.written', { id: r.item.id, kind: r.item.kind, name: r.item.name })
+      else if (r.reason !== 'duplicate' && r.reason !== 'missing' && r.reason !== 'not-file') {
+        log('auto.skipped', { path, reason: r.reason })
+      }
     }
-  }, { global: true })
+  }
+
+  /** 轮末清扫（防重入；本会话还在扫时下一个 turn/end 会自然并进下轮）。 */
+  function queueSweep(session, sinceMs) {
+    const sid = String(session?.id || '')
+    if (!sid || sweeping.has(sid)) return
+    const cwd = sessionCwds.get(sid) || session?.header?.cwd
+    if (!cwd) return
+    sweeping.add(sid)
+    void sweepWorkspace(store, cwd, {
+      sinceMs: timeMsOf(sinceMs) || Date.now(),
+      exts: autoExts,
+      maxFiles: sweepMax,
+      source: sourceLabel(session),
+      sessionId: sid,
+    }).then((stats) => {
+      if (stats.added) log('auto.swept', { session: sid.slice(0, 8), added: stats.added, seen: stats.seen })
+    }).catch((error) => {
+      log('auto.sweep.error', { message: error instanceof Error ? error.message : String(error) })
+    }).finally(() => sweeping.delete(sid))
+  }
+
+  if (autoActive) {
+    ctx.on?.('session/event', (session, event) => {
+      const type = event?.type
+      if (type === 'deliverables/presented') {
+        const files = Array.isArray(event.data?.files) ? event.data.files : []
+        for (const file of files) {
+          const path = String(file?.path || '')
+          if (!path) continue
+          const r = collectFromDisk(store, path, {
+            note: String(file?.description || '').slice(0, 500),
+            source: sourceLabel(session),
+            sessionId: String(session?.id || ''),
+          })
+          if (r.added) log('auto.presented', { id: r.item.id, kind: r.item.kind, name: r.item.name })
+          else if (r.reason !== 'duplicate') log('auto.skipped', { path, reason: r.reason })
+        }
+        return
+      }
+      if (autoMode !== 'all') return
+      const sid = String(session?.id || '')
+      if (type === 'tool/result') return drainWrites(session)
+      if (type === 'turn/start') {
+        if (sid) {
+          turnStarts.set(sid, { turn: Number(event.data?.turn) || 0, at: timeMsOf(event.time) || Date.now() })
+          const cwd = String(session?.header?.cwd || '')
+          if (cwd) sessionCwds.set(sid, cwd)
+        }
+        return
+      }
+      if (type === 'working-directory/change') {
+        const cwd = String(event.data?.cwd || '')
+        if (sid && cwd) sessionCwds.set(sid, cwd)
+        return
+      }
+      if (type === 'turn/end') {
+        drainWrites(session)
+        queueSweep(session, turnStarts.get(sid)?.at)
+      }
+    }, { global: true })
+
+    ctx.on?.('session/disposed', (session) => {
+      const sid = String(session?.id || '')
+      if (autoMode === 'all' && sid) {
+        drainWrites(session)
+        queueSweep(session, turnStarts.get(sid)?.at)
+      }
+      pendingWrites.delete(sid)
+      turnStarts.delete(sid)
+      sessionCwds.delete(sid)
+      sweeping.delete(sid)
+    }, { global: true })
+  }
+
+  if (autoMode === 'all') {
+    const fsService = ctx.fs ?? ctx.get?.('fs')
+    if (fsService && typeof fsService.processPath === 'function') {
+      const noteIntent = (target, actor) => {
+        try {
+          const path = fsService.processPath(target)
+          const sid = String(actor?.agent?.session?.id || '')
+          if (!path || !sid) return
+          let set = pendingWrites.get(sid)
+          if (!set) pendingWrites.set(sid, (set = new Set()))
+          if (set.size < 500) set.add(path)
+        } catch { /* processPath 失败就当没看见 */ }
+      }
+      const onIntent = async (target, actor, next) => {
+        const intent = await next()
+        noteIntent(target, actor)
+        return intent
+      }
+      ctx.on?.('fs/write-intent', onIntent, { global: true })
+      ctx.on?.('fs/edit-intent', onIntent, { global: true })
+    } else {
+      log('fs.missing', { note: '写入钩子不可用，自动收集退化为仅轮末清扫' })
+    }
+  }
 
   // ---- 旧会话回填：默认首次启动后后台扫历史日志（marker 防重扫；内容去重保证幂等）----
   const markerPath = join(store.root, 'backfill.json')

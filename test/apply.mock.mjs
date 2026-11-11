@@ -61,9 +61,14 @@ ctx.fs = {
 apply(ctx, {})
 assert.equal(registeredRoutes.length, 2, '内容路由 + 管理 API')
 assert.equal(registeredTools.length, 1, 'save_artifact 工具')
-assert.equal(eventHandlers.length, 1, 'session/event 监听')
+assert.equal(eventHandlers.length, 4, 'session/event + session/disposed + fs 写入钩子×2')
 assert.equal(eventHandlers[0].event, 'session/event')
 assert.ok(eventHandlers[0].options.global)
+assert.deepEqual(
+  eventHandlers.slice(1).map((h) => h.event).sort(),
+  ['fs/edit-intent', 'fs/write-intent', 'session/disposed'],
+  '自动收集新监听器',
+)
 
 const api = registeredRoutes.find((r) => r.path === '/api/dsh-artifacts')
 const fileRoute = registeredRoutes.find((r) => r.path === '/api/dsh-artifacts/file')
