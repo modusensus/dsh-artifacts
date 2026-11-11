@@ -11,7 +11,7 @@
  */
 import { promises as fsp } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { capForKind, classify, collectFromDisk, dshHome, mimeForExt } from './store.js'
+import { capForKind, classify, collectFromDisk, dshHome, mimeForExt, workspaceLabel } from './store.js'
 
 const ZSTD_MAGIC = 4247762216
 const MAX_SESSION_FILE_BYTES = 150 * 1024 * 1024
@@ -150,7 +150,7 @@ export async function backfillFromSessions(store, { days = 0, maxFiles = 300, on
       const { header, lines } = await extractPresented(log.path)
       stats.scanned += 1
       if (!lines.length) continue
-      const ws = header.cwd ? basename(header.cwd) : ''
+      const ws = workspaceLabel(header.cwd)
       const sid = String(header.id || '').replace(/^session-/, '').slice(0, 8)
       const source = [ws, sid ? `会话 ${sid}` : ''].filter(Boolean).join(' · ') || '会话'
       for (const line of lines) {

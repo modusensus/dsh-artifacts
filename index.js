@@ -16,11 +16,11 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES,
-  artifactsRoot, collectFromDisk,
+  artifactsRoot, collectFromDisk, workspaceLabel,
 } from './store.js'
 import { DEFAULT_AUTO_EXTS, normalizeExts, sweepWorkspace } from './auto.js'
 import { backfillFromSessions } from './backfill.js'
@@ -41,7 +41,7 @@ const pluginVersion = (() => {
 /** 会话来源标签：工作区目录名 + 会话短 id。 */
 function sourceLabel(session) {
   let ws = ''
-  try { ws = session?.header?.cwd ? basename(session.header.cwd) : '' } catch { /* header 不可读就算了 */ }
+  try { ws = workspaceLabel(session?.header?.cwd) } catch { /* header 不可读就算了 */ }
   const id = String(session?.id || '').slice(0, 8)
   const parts = []
   if (ws) parts.push(ws)

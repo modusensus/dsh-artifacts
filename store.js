@@ -28,6 +28,12 @@ export function artifactsRoot() {
   return join(dshHome(), '.dsh', 'artifacts')
 }
 
+/** 路径末段目录名：/ 与 \ 都认（回填的会话日志可能来自另一台机器的路径风格）。 */
+export function workspaceLabel(cwd) {
+  const parts = String(cwd || '').split(/[\\/]+/).filter(Boolean)
+  return parts[parts.length - 1] || ''
+}
+
 export function filesDir() {
   return join(artifactsRoot(), 'files')
 }
