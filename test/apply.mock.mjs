@@ -32,6 +32,18 @@ const fakeRes = () => {
   return res
 }
 
+// 工作区 mock：save_artifact file 分支用
+const workDir = mkdtempSync(join(tmpdir(), 'dsh-artifacts-work-'))
+writeFileSync(join(workDir, 'report.md'), '# 报告\n内容', 'utf8')
+writeFileSync(join(workDir, 'shot.png'), Buffer.from('89504e47', 'hex'), 'utf8')
+const fsService = {
+  resolve: async (p, opts) => (p.startsWith('/') ? p : join(opts.cwd, p)),
+  processPath: (p) => p,
+}
+const workingDirectory = { ensure: async () => workDir }
+
+// cordis 里 fs / workingDirectory 是「可选服务」：只能经 ctx.get 查询，
+// 直接 ctx.fs 属性访问会抛 cannot get property "fs" without inject。
 const ctx = {
   get(name) {
     if (name === 'webServer') {
@@ -40,22 +52,14 @@ const ctx = {
     if (name === 'tools') {
       return { register(tool) { registeredTools.push(tool) } }
     }
+    if (name === 'fs') return fsService
+    if (name === 'workingDirectory') return workingDirectory
     return undefined
   },
   on(event, handler, options) { eventHandlers.push({ event, handler, options }) },
   // cordis effect 语义：立即执行，返回值作为 dispose 回调
   effect(fn, label) { effects.push({ label, dispose: fn() }) },
   logger: { info: (m) => logs.push(m), warn: (m) => logs.push(m) },
-}
-
-// 工作区 mock：save_artifact file 分支用
-const workDir = mkdtempSync(join(tmpdir(), 'dsh-artifacts-work-'))
-writeFileSync(join(workDir, 'report.md'), '# 报告\n内容', 'utf8')
-writeFileSync(join(workDir, 'shot.png'), Buffer.from('89504e47', 'hex'), 'utf8')
-ctx.workingDirectory = { ensure: async () => workDir }
-ctx.fs = {
-  resolve: async (p, opts) => (p.startsWith('/') ? p : join(opts.cwd, p)),
-  processPath: (p) => p,
 }
 
 apply(ctx, {})

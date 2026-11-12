@@ -61,6 +61,6 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node test/store.test.mjs && node test/backfill.test.mjs && node test/apply.mock.mjs && node test/auto.test.mjs"
+    "test": "node test/store.test.mjs && node test/backfill.test.mjs && node test/apply.mock.mjs && node test/auto.test.mjs && node test/inject-contract.test.mjs && node test/fallback.test.mjs && node test/client.smoke.test.mjs"
   }
 }

@@ -30,20 +30,22 @@ function makeCtx(workDir) {
   const handlers = []
   const routes = []
   const logs = []
-  const ctx = {
-    get(name) {
-      if (name === 'webServer') return { register: (route) => routes.push(route) }
-      if (name === 'tools') return { register: () => {} }
-      return undefined
-    },
-    on(event, handler, options) { handlers.push({ event, handler, options }) },
-    effect(fn) { fn() },
-    logger: { info: (m) => logs.push(m) },
+  // cordis 里 fs / workingDirectory 是可选服务，只能走 ctx.get 查询；
+  // 直接写成 ctx.fs 属性在真实宿主里会抛 cannot get property "fs" without inject。
+  const services = {
+    webServer: { register: (route) => routes.push(route) },
+    tools: { register: () => {} },
     fs: {
       resolve: async (p, opts) => (p.startsWith('/') ? p : join(opts.cwd, p)),
       processPath: (t) => (typeof t === 'string' ? t : String(t?.path || '')),
     },
     workingDirectory: { ensure: async () => workDir },
+  }
+  const ctx = {
+    get(name) { return services[name] },
+    on(event, handler, options) { handlers.push({ event, handler, options }) },
+    effect(fn) { fn() },
+    logger: { info: (m) => logs.push(m) },
   }
   return { ctx, handlers, routes, logs }
 }

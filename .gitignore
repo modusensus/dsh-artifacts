@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 *.bak*
 *.tmp
+.probe/
+.probe-tmp/
+.v2c/
