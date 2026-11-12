@@ -1,0 +1,98 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  publish:
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.check.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # 标签必须是 v<package.json version>，否则发出去的版本和标签对不上
+      - name: Check tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(node -p "require('./package.json').version")"
+          echo "tag=$tag version=$ver"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $ver"
+            exit 1
+          fi
+
+      - name: Check whether this version is already on the registry
+        id: check
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          name="$(node -p "require('./package.json').name")"
+          echo "checking $name@$ver on the registry"
+          if npm view "$name@$ver" version >/dev/null 2>&1; then
+            echo "$ver is already published, skipping publish"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 有 NPM_TOKEN 就走 token；没有就交给 npm trusted publishing（OIDC），
+      # 需要在 npmjs.com 的包设置里配好 GitHub trusted publisher
+      - name: Publish to npm
+        if: steps.check.outputs.published == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN is not set; falling back to npm trusted publishing"
+            unset NODE_AUTH_TOKEN
+          fi
+          npm publish --access public --provenance
+
+  # needs 必须带 publish：npm 发不出去就不该先建出一个 Release
+  release:
+    needs: [test, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists, nothing to do"
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
