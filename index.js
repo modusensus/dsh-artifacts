@@ -14,16 +14,119 @@
  *
  * 存储在 ~/.dsh/artifacts/（index.json + files/<sha256><ext>），见 store.js。
  */
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   ArtifactStore, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES,
   artifactsRoot, collectFromDisk, workspaceLabel,
 } from './store.js'
 import { DEFAULT_AUTO_EXTS, normalizeExts, sweepWorkspace } from './auto.js'
 import { backfillFromSessions } from './backfill.js'
+
+// ---------------------------------------------------------------------------
+// defineTool
+//
+// @deepseek-ai/dsh-tools 是宿主提供的模块（装在 app.asar 里），不在插件自己的
+// node_modules 下。正常装配时 profile 的解析拦截层能把它交给插件，所以裸模块名
+// 是能解析的——但这条解析链依赖宿主内部设施，一旦宿主换装配方式或插件被装到
+// 别的 profile 下，顶层静态 import 失败会让**整个模块**在 import 阶段就抛错，
+// 宿主只记一条日志、不挂 fiber，插件就此完全缺席：工具、路由、收集器全没有，
+// 而客户端面板还在，看起来正是「面板在但加载不出内容」。
+//
+// 一个可选依赖不该有这种杀伤力，所以不写静态 import，改成运行时三级兜底：
+//   1) 裸模块名（正常情况命中）
+//   2) 运行时目录里那个打包位置（app.asar / app.asar.unpacked）
+//   3) 本地等价实现
+//
+// defineTool 不是透传：它把友好 schema 描述编译成 registry-ready 的 JSON Schema，
+// register 会断言编译结果。少了这层编译，register 抛
+//   JsonSchemaError: unsupported JSON schema: schema.type must be one of ...
+// 所以兜底实现必须老老实实做转换。
+// ---------------------------------------------------------------------------
+
+function localValueSchema(spec) {
+  if (spec === undefined || spec === null) return {}
+  if (typeof spec !== 'object') return {}
+  const type = String(spec.type || '')
+  if (type === 'json' || type === 'any' || type === '') return {}   // 无类型约束 = 注解式 schema，register 接受
+  if (type === 'string' || type === 'number' || type === 'integer' || type === 'boolean' || type === 'null') {
+    const out = { type }
+    if (Array.isArray(spec.enum) && spec.enum.length) out.enum = spec.enum.slice()
+    if (spec.description) out.description = String(spec.description)
+    return out
+  }
+  if (type === 'array') {
+    const out = { type: 'array', items: localValueSchema(spec.items) }
+    if (spec.description) out.description = String(spec.description)
+    return out
+  }
+  if (type === 'object') {
+    const out = { type: 'object', additionalProperties: true }
+    if (spec.description) out.description = String(spec.description)
+    return out
+  }
+  return {}
+}
+
+function localParameters(spec) {
+  const properties = {}
+  const required = []
+  for (const [key, value] of Object.entries(spec || {})) {
+    properties[key] = localValueSchema(value)
+    if (value && value.required === true) required.push(key)
+  }
+  // 与宿主 parameterSchemaSpecToJsonSchema 逐字节一致：只有 type/properties(/required)，
+  // 不写 additionalProperties——多写一条就和真机编译结果不同，模型看到的 schema 也就变了。
+  const out = { type: 'object', properties }
+  if (required.length) out.required = required
+  return out
+}
+
+function localDefineTool(options) {
+  const output = options.output || {}
+  const tool = {
+    name: options.name,
+    description: options.description,
+    parameters: localParameters(options.parameters),
+    output: {
+      schema: localValueSchema(output.schema),
+      render: (args, value) => output.render(args, value),
+    },
+    async execute(args, exec) { return options.execute(args, exec) },
+  }
+  if (typeof output.presentationMeta === 'function') {
+    tool.output.presentationMeta = (args, value) => output.presentationMeta(args, value)
+  }
+  if (options.timeoutMs !== undefined) tool.timeoutMs = options.timeoutMs
+  return tool
+}
+
+async function resolveDefineTool() {
+  const candidates = ['@deepseek-ai/dsh-tools']
+  try {
+    const resources = process.resourcesPath
+    if (resources) {
+      const base = pathToFileURL(String(resources).replace(/[\\/]+$/, '') + '/').href
+      candidates.push(base + 'app.asar/dsh/node_modules/@deepseek-ai/dsh-tools/lib/index.js')
+      candidates.push(base + 'app.asar.unpacked/dsh/node_modules/@deepseek-ai/dsh-tools/lib/index.js')
+    }
+  } catch { /* 非 Electron 环境没有 resourcesPath */ }
+  for (const spec of candidates) {
+    try {
+      const mod = await import(spec)
+      if (mod && typeof mod.defineTool === 'function') return { defineTool: mod.defineTool, from: spec }
+    } catch { /* 试下一个 */ }
+  }
+  return { defineTool: localDefineTool, from: 'local' }
+}
+
+const resolvedDefineTool = await resolveDefineTool()
+const defineTool = resolvedDefineTool.defineTool
+if (resolvedDefineTool.from === 'local') {
+  // 兜底可用，但宿主那层真实实现更贴切：留一条 warn 让装配日志里看得见，不静默。
+  console.warn('[dsh-artifacts] 没取到宿主的 @deepseek-ai/dsh-tools，改用本地等价的 defineTool（schema 转换行为一致）')
+}
 
 export const name = 'dsh-artifacts'
 export const inject = ['webServer', 'tools']
@@ -303,7 +406,9 @@ export function apply(ctx, config = {}) {
   }
 
   if (autoMode === 'all') {
-    const fsService = ctx.fs ?? ctx.get?.('fs')
+    // fs 是可选能力：用 ctx.get 查询，不写进 inject —— 声明成必需会让插件在
+    // 没有 fs 服务的宿主里永远不激活，连带工具和路由一起消失。
+    const fsService = ctx.get?.('fs')
     if (fsService && typeof fsService.processPath === 'function') {
       const noteIntent = (target, actor) => {
         try {
@@ -382,9 +487,12 @@ export function apply(ctx, config = {}) {
           const rawPath = String(args.path || '').trim()
           if (!rawPath) return { ok: false, message: 'kind=file 需要给 path。' }
           try {
-            const cwd = await ctx.workingDirectory.ensure(exec.agent, exec.signal)
-            const target = await ctx.fs.resolve(rawPath, { cwd, signal: exec.signal })
-            const processPath = ctx.fs.processPath(target)
+            const fsService = ctx.get?.('fs')
+            const workingDirectory = ctx.get?.('workingDirectory')
+            if (!fsService || !workingDirectory) return { ok: false, message: '当前环境没有文件服务，无法按路径收藏文件。' }
+            const cwd = await workingDirectory.ensure(exec.agent, exec.signal)
+            const target = await fsService.resolve(rawPath, { cwd, signal: exec.signal })
+            const processPath = fsService.processPath(target)
             const r = collectFromDisk(store, processPath, { note, source, sessionId })
             if (r.added) return { ok: true, id: r.item.id, message: '已收藏文件「' + r.item.name + '」到产物。' }
             if (r.reason === 'duplicate' && r.item) return { ok: true, id: r.item.id, message: '这个文件已经在产物里了，未重复收藏。' }
