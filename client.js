@@ -6,8 +6,12 @@
  * 空态文案与设计稿一致。数据走 /api/dsh-artifacts。
  *
  * 注册：sidebar.panellist 图标入口（order 9，排在定时任务前）+ main keyed slot 面板体。
- * 注册 id 必须等于 loader entry 名（dsh-artifacts），否则 ModuleLoader 报
- * "loaded without registering dsh-artifacts"。
+ * 两个注册是平级的 slots.inject，各自等自己的槽位声明出现——不要把一个嵌在另一个
+ * 的回调里，否则外层槽位没声明时内层永远不执行。
+ *
+ * inject 必须声明 'slots'：cordis client runner 拿 fiber.inject 决定 apply 之前要不要
+ * 等 provider 就绪；不声明虽然能用 ctx.get 拿到，但 apply 可能在 slots 服务尚未 provide
+ * 时先跑一遍，然后就再也不跑第二次。
  */
 window.__ModuleLoader__.load({
   id: '@modusensus/dsh-artifacts',
@@ -29,6 +33,8 @@ window.__ModuleLoader__.load({
         search: '搜索产物…', refresh: '刷新', add: '收藏', addLink: '收藏链接', addPaste: '粘贴图片收藏',
         addFile: '上传文件收藏', pasteHint: '按 Ctrl+V 粘贴图片', save: '收藏', cancel: '取消',
         urlPlaceholder: 'https://…', titlePlaceholder: '标题（可选）', notePlaceholder: '备注（可选）',
+        loadFailTitle: '产物服务没响应',
+        loadFailText: '面板拿不到数据，通常是插件的宿主半边没加载起来。点「刷新」重试，或重启一次应用。',
         emptyTitle: '未找到产物',
         emptyText: '当会话生成图片、视频和文件输出时，它们会显示在这里。',
         emptyTextAdd: '也可以点右上角「收藏」手动收链接、图片或文件。',
@@ -42,6 +48,8 @@ window.__ModuleLoader__.load({
         search: 'Search artifacts…', refresh: 'Refresh', add: 'Save', addLink: 'Save link', addPaste: 'Paste image',
         addFile: 'Upload file', pasteHint: 'Press Ctrl+V to paste an image', save: 'Save', cancel: 'Cancel',
         urlPlaceholder: 'https://…', titlePlaceholder: 'Title (optional)', notePlaceholder: 'Note (optional)',
+        loadFailTitle: 'Artifact service unavailable',
+        loadFailText: 'The panel could not reach its backend — usually the plugin host half did not load. Retry, or restart the app.',
         emptyTitle: 'No artifacts yet',
         emptyText: 'Images, videos and files produced in sessions will show up here.',
         emptyTextAdd: 'You can also use "Save" to keep links, images or files.',
@@ -129,7 +137,12 @@ window.__ModuleLoader__.load({
     // ---- API ----
     async function apiList(query) {
       const qs = query ? '&query=' + encodeURIComponent(query) : ''
-      return (await fetch(API + '?list=1' + qs)).json()
+      const res = await fetch(API + '?list=1' + qs)
+      const body = await res.json().catch(() => null)
+      // 宿主没回 JSON（401 未鉴权、404 路由不存在、502 之类）时必须把状态码带出来，
+      // 不能返回 undefined 让上层当成"库是空的"——那正是以前"面板在、内容永远空"的假象。
+      if (body === null) return { ok: false, error: 'HTTP ' + res.status }
+      return body
     }
     async function apiPost(payload) {
       return (await fetch(API, {
@@ -344,6 +357,7 @@ window.__ModuleLoader__.load({
       const [showLinkForm, setShowLinkForm] = React.useState(false)
       const [lightbox, setLightbox] = React.useState(null)
       const [toast, setToast] = React.useState('')
+      const [loadError, setLoadError] = React.useState('')
       const fileInputRef = React.useRef(null)
       const imageInputRef = React.useRef(null)
       const toastTimer = React.useRef(null)
@@ -360,8 +374,14 @@ window.__ModuleLoader__.load({
           if (r.ok) {
             setItems(r.items)
             setCounts(r.counts || { all: (r.items || []).length, image: 0, video: 0, file: 0, link: 0 })
+            setLoadError('')
+            return
           }
-        } catch { /* 宿主未就绪时静默，下次刷新再试 */ }
+          // 失败必须留痕：以前这里静默跳过，401/404 和"库是空的"在界面上长得一模一样。
+          setLoadError(r.error || r.message || '加载失败')
+        } catch (error) {
+          setLoadError(String((error && error.message) || error))
+        }
       }, [])
 
       React.useEffect(() => {
@@ -434,7 +454,13 @@ window.__ModuleLoader__.load({
         h('input', { ref: fileInputRef, type: 'file', multiple: true, style: { display: 'none' }, onChange: (e) => { void pickAndSend(e.target.files); e.target.value = '' } }),
         h('div', { className: 'da-body' },
           showLinkForm ? h(AddLinkForm, { t, onDone: () => setShowLinkForm(false), onToast: showToast }) : null,
-          empty
+          empty && loadError
+            ? h('div', { className: 'da-empty' },
+                h('div', { className: 'da-glyph' }, glyph('box', 44)),
+                h('h2', null, t('loadFailTitle')),
+                h('p', null, t('loadFailText') + '（' + loadError + '）'),
+                h('p', null, h('button', { type: 'button', className: 'da-tab', onClick: () => void reload(query) }, t('refresh'))))
+            : empty
             ? h('div', { className: 'da-empty' },
                 h('div', { className: 'da-glyph' }, glyph('box', 44)),
                 h('h2', null, t('emptyTitle')),
@@ -450,8 +476,13 @@ window.__ModuleLoader__.load({
 
     // 宿主 locale 服务经 dsh.client.inject 注入后写入 tRef
     const apply = (ctx) => {
-      const slots = ctx.get?.('slots')
-      if (slots === undefined || typeof slots.register !== 'function') return
+      const slots = ctx.slots ?? ctx.get?.('slots')
+      if (slots === undefined || typeof slots.register !== 'function') {
+        // 声明了 inject: ['slots'] 之后这里基本不该发生；真发生了也要留下痕迹，
+        // 不能像以前那样一声不响地把整个面板吞掉。
+        console.warn('[dsh-artifacts] slots 服务不可用，面板未注册')
+        return
+      }
       const locale = ctx.get?.('locale')
       tRef.current = buildTranslate(locale)
 
@@ -461,14 +492,16 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style)
 
       const disposers = []
-      disposers.push(slots.inject('main', () => {
-        const disposeMain = slots.register({ name: 'main', key: PANEL_ID }, PanelView)
-        const disposeEntry = slots.inject('sidebar.panellist', () => slots.register(
-          { name: 'sidebar.panellist', id: PANEL_ID, order: 9, label: () => tRef.current('panel') },
-          PanelIcon,
-        ))
-        return [disposeMain, disposeEntry]
-      }))
+      // 面板体：main 是 keyed slot，key 与侧栏入口 id 必须同名，layout 才切得过去。
+      disposers.push(slots.inject('main', () => slots.register(
+        { name: 'main', key: PANEL_ID },
+        PanelView,
+      )))
+      // 侧栏入口：与上面平级，各等各的槽位声明，互不阻塞。
+      disposers.push(slots.inject('sidebar.panellist', () => slots.register(
+        { name: 'sidebar.panellist', id: PANEL_ID, order: 9, label: () => tRef.current('panel') },
+        PanelIcon,
+      )))
 
       if (typeof ctx.effect === 'function') {
         ctx.effect(() => () => {
@@ -480,7 +513,9 @@ window.__ModuleLoader__.load({
       }
     }
 
-    module.exports = { apply }
+    const inject = ['slots']
+
+    module.exports = { apply, inject }
     return module.exports
   },
 })

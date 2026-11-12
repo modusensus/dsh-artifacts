@@ -17,7 +17,7 @@
 | | |
 |---|---|
 | 🗂 **五个分类** | 全部 / 图片 / 视频 / 文件 / 链接，各自带计数，支持关键词搜索 |
-| ✨ **自动收集** | 会话里用 `present` 交付的文件、图片、视频自动入箱，按 SHA-256 内容去重 |
+| ✨ **自动收集** | 三路自动入箱：`present` 交付、模型写盘（write/edit 工具）、轮末工作区清扫（bash/脚本产物），按 SHA-256 内容去重 |
 | 🎞 **视频首帧** | 视频卡片直接显示首帧缩略图，点开灯箱即可播放 |
 | 🕓 **历史回填** | 首次启动后台扫描历史会话日志，把过去交付过、磁盘上仍在的文件一并收进来 |
 | 📌 **手动收藏** | 收藏链接、Ctrl+V 粘贴图片、上传文件（≤ 25MB） |
@@ -94,6 +94,9 @@ pnpm install --ignore-scripts
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `root` | `~/.dsh/artifacts/` | 存储目录 |
+| `auto` | `all` | 自动收集范围：`all` = present 交付 + 模型写盘 + 轮末清扫；`present` = 仅 present 交付（0.2.x 行为）；`off` = 关闭自动收集 |
+| `autoExts` | 见下 | 写盘钩子与轮末清扫的扩展名白名单（present 交付不受限）；数组或逗号分隔字符串，如 `['png', 'md', 'csv']`。默认：图片（png/jpg/jpeg/gif/webp/bmp/svg/avif）+ 视频（mp4/m4v/webm/mov/mkv/avi/mpg/mpeg）+ 音频（mp3/wav/ogg/flac/m4a）+ pdf/zip/md/html/htm/csv |
+| `autoSweepMax` | `50` | 单轮清扫最多入库条数 |
 | `backfill` | `once` | 历史回填策略：`once` 首次启动扫一次 / `always` 每次启动都扫 / `false` 关闭 |
 | `backfillDays` | `0` | 只扫最近 N 天的会话日志，`0` 表示不限 |
 | `backfillMaxFiles` | `500` | 单次回填最多扫描多少个会话日志（按 mtime 降序） |
@@ -156,8 +159,9 @@ pnpm install --ignore-scripts
 
 ## 已知边界
 
-- 自动收集只覆盖 `present` 交付。聊天里直接贴出但未交付的图片不会自动入箱，可以在会话里让模型调用 `save_artifact`。
-- 上传走 base64，单文件上限 25MB；`present` 自动收集与回填：图片 / 文件 ≤ 50MB，视频 ≤ 200MB。
+- 自动收集三路的覆盖面：`present` 交付全部收；模型写盘钩子只覆盖走 fs 服务的写文件工具；轮末清扫按扩展名白名单收（json/代码文件等不收，避免把改配置当成交付）。
+- 聊天里内联贴出但未交付、也不落盘的图片不会自动入箱，可以在会话里让模型调用 `save_artifact`。
+- 上传走 base64，单文件上限 25MB；自动收集与回填：图片 / 文件 ≤ 50MB，视频 ≤ 200MB。
 - 回填只收磁盘上仍然存在的文件，已被清理的交付不会入库。
 - 文件「打开」在新标签页查看，浏览器不支持预览的类型会转为下载。
 
@@ -166,16 +170,17 @@ pnpm install --ignore-scripts
 ## 开发
 
 ```bash
-npm test          # 跑全部测试（store / backfill / 客户端注册）
+npm test          # 跑全部测试（store / backfill / 客户端注册 / 自动收集）
 ```
 
 源码结构：
 
 | 文件 | 职责 |
 |---|---|
-| `index.js` | 宿主半边：路由注册、事件监听、`save_artifact` 工具 |
+| `index.js` | 宿主半边：路由注册、事件监听（present / 写入钩子 / 轮末清扫）、`save_artifact` 工具 |
 | `client.js` | 浏览器半边：侧边栏入口、面板 UI、灯箱 |
 | `store.js` | 存储层：索引读写、内容落盘、去重、上限控制 |
+| `auto.js` | 自动收集：轮末工作区清扫与白名单 |
 | `backfill.js` | 历史回填：扫描会话日志中的 `deliverables/presented` |
 | `cordis.patch.yml` | 插件装载声明 |
 

@@ -1,7 +1,7 @@
 {
   "name": "@modusensus/dsh-artifacts",
-  "version": "0.2.1",
-  "description": "DeepSeek Harness「产物」插件：左侧边栏的全局产物收藏夹——会话交付的图片和文件自动入箱，也可手动收藏链接、粘贴图片、上传文件；全部/图片/文件/链接 分类浏览。",
+  "version": "0.3.0",
+  "description": "DeepSeek Harness「产物」插件：左侧边栏的全局产物收藏夹——会话交付、模型写盘与轮末工作区清扫自动入箱，也可手动收藏链接、粘贴图片、上传文件；全部/图片/视频/文件/链接 分类浏览。",
   "type": "module",
   "main": "index.js",
   "repository": {
@@ -19,6 +19,7 @@
     "index.js",
     "store.js",
     "backfill.js",
+    "auto.js",
     "README.md",
     "LICENSE"
   ],
@@ -60,6 +61,6 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "node test/store.test.mjs && node test/backfill.test.mjs && node test/apply.mock.mjs"
+    "test": "node test/store.test.mjs && node test/backfill.test.mjs && node test/apply.mock.mjs && node test/auto.test.mjs && node test/inject-contract.test.mjs && node test/fallback.test.mjs && node test/client.smoke.test.mjs"
   }
 }

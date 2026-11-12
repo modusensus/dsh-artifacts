@@ -32,6 +32,18 @@ const fakeRes = () => {
   return res
 }
 
+// 工作区 mock：save_artifact file 分支用
+const workDir = mkdtempSync(join(tmpdir(), 'dsh-artifacts-work-'))
+writeFileSync(join(workDir, 'report.md'), '# 报告\n内容', 'utf8')
+writeFileSync(join(workDir, 'shot.png'), Buffer.from('89504e47', 'hex'), 'utf8')
+const fsService = {
+  resolve: async (p, opts) => (p.startsWith('/') ? p : join(opts.cwd, p)),
+  processPath: (p) => p,
+}
+const workingDirectory = { ensure: async () => workDir }
+
+// cordis 里 fs / workingDirectory 是「可选服务」：只能经 ctx.get 查询，
+// 直接 ctx.fs 属性访问会抛 cannot get property "fs" without inject。
 const ctx = {
   get(name) {
     if (name === 'webServer') {
@@ -40,6 +52,8 @@ const ctx = {
     if (name === 'tools') {
       return { register(tool) { registeredTools.push(tool) } }
     }
+    if (name === 'fs') return fsService
+    if (name === 'workingDirectory') return workingDirectory
     return undefined
   },
   on(event, handler, options) { eventHandlers.push({ event, handler, options }) },
@@ -48,22 +62,17 @@ const ctx = {
   logger: { info: (m) => logs.push(m), warn: (m) => logs.push(m) },
 }
 
-// 工作区 mock：save_artifact file 分支用
-const workDir = mkdtempSync(join(tmpdir(), 'dsh-artifacts-work-'))
-writeFileSync(join(workDir, 'report.md'), '# 报告\n内容', 'utf8')
-writeFileSync(join(workDir, 'shot.png'), Buffer.from('89504e47', 'hex'), 'utf8')
-ctx.workingDirectory = { ensure: async () => workDir }
-ctx.fs = {
-  resolve: async (p, opts) => (p.startsWith('/') ? p : join(opts.cwd, p)),
-  processPath: (p) => p,
-}
-
 apply(ctx, {})
 assert.equal(registeredRoutes.length, 2, '内容路由 + 管理 API')
 assert.equal(registeredTools.length, 1, 'save_artifact 工具')
-assert.equal(eventHandlers.length, 1, 'session/event 监听')
+assert.equal(eventHandlers.length, 4, 'session/event + session/disposed + fs 写入钩子×2')
 assert.equal(eventHandlers[0].event, 'session/event')
 assert.ok(eventHandlers[0].options.global)
+assert.deepEqual(
+  eventHandlers.slice(1).map((h) => h.event).sort(),
+  ['fs/edit-intent', 'fs/write-intent', 'session/disposed'],
+  '自动收集新监听器',
+)
 
 const api = registeredRoutes.find((r) => r.path === '/api/dsh-artifacts')
 const fileRoute = registeredRoutes.find((r) => r.path === '/api/dsh-artifacts/file')
