@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/%40modusensus%2Fdsh-artifacts.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 [![GitHub stars](https://img.shields.io/github/stars/modusensus/dsh-artifacts.svg)](https://github.com/modusensus/dsh-artifacts)
+[![Awesome DeepSeek Harness](https://awesome.re/mentioned-badge.svg)](https://github.com/Dominic789654/awesome-deepseek-harness)
 
 会话里跑出来的图、生成的视频、写好的文件，聊完就散在各自的会话里。产物插件把它们收进一个地方：左侧边栏多一个「产物」入口，所有会话交付过的东西都躺在里面，按内容去重，跨会话可查。
 
